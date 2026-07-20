@@ -40,6 +40,19 @@ class Instrumentation {
             backup(thiz, MaybeUseBackupMethod(art_method, quick_code), quick_code);
         });
 
+    // InitializeMethodsCode was renamed to UpdateMethodsCodeImpl on API 37.
+    CREATE_MEM_HOOK_STUB_ENTRY(
+        "_ZN3art15instrumentation15Instrumentation21UpdateMethodsCodeImplEPNS_9ArtMethodEPKv", void,
+        UpdateMethodsCodeImpl,
+        (Instrumentation * thiz, ArtMethod *art_method, const void *quick_code), {
+            if (IsDeoptimized(art_method)) {
+                LOGV("skip update entrypoint on deoptimized method %s",
+                     art_method->PrettyMethod(true).c_str());
+                return;
+            }
+            backup(thiz, MaybeUseBackupMethod(art_method, quick_code), quick_code);
+        });
+
 public:
     static bool Init(JNIEnv *env, const HookHandler &handler) {
         if (!IsJavaDebuggable(env)) [[likely]] {
@@ -47,9 +60,13 @@ public:
         }
         int sdk_int = GetAndroidApiLevel();
         if (sdk_int >= __ANDROID_API_P__) [[likely]] {
-            if (!HookSyms(handler, InitializeMethodsCode,
+            if (!HookSyms(handler, InitializeMethodsCode, UpdateMethodsCodeImpl,
                           UpdateMethodsCodeToInterpreterEntryPoint)) {
-                return false;
+                // Some userdebug ART builds strip all of these debuggable-only symbols. InitNative
+                // forces the runtime non-debuggable after initialization, which provides the same
+                // protection against resetting hooked entrypoints.
+                LOGW("instrumentation code-update hooks unavailable; relying on the "
+                     "non-debuggable runtime workaround");
             }
         }
         return true;
