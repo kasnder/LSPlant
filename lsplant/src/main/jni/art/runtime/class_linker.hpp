@@ -142,10 +142,10 @@ public:
             HookSyms(handler, ShouldUseInterpreterEntrypoint);
         }
 
-        if (!HookSyms(handler, FixupStaticTrampolinesWithThread, FixupStaticTrampolines,
-                      FixupStaticTrampolinesRaw)) {
-            return false;
-        }
+        // FixupStaticTrampolines was removed/inlined on API 37. Class initialization is handled
+        // through the visibly-initialized callback below, so accept either hook path.
+        bool fixup_hooked = HookSyms(handler, FixupStaticTrampolinesWithThread,
+                                     FixupStaticTrampolines, FixupStaticTrampolinesRaw);
 
         if (!HookSyms(handler, RegisterNativeClassLinker, RegisterNative, RegisterNativeFast,
                       RegisterNativeThread) ||
@@ -154,11 +154,17 @@ public:
             return false;
         }
 
+        bool visibility_hooked = false;
         if (sdk_int >= __ANDROID_API_R__) {
             if constexpr (GetArch() != Arch::kX86 && GetArch() != Arch::kX86_64) {
                 // fixup static trampoline may have been inlined
-                HookSyms(handler, AdjustThreadVisibilityCounter, MarkVisiblyInitialized);
+                visibility_hooked =
+                    HookSyms(handler, AdjustThreadVisibilityCounter, MarkVisiblyInitialized);
             }
+        }
+
+        if (!fixup_hooked && !visibility_hooked) {
+            return false;
         }
 
         if (!RETRIEVE_MEM_FUNC_SYMBOL(

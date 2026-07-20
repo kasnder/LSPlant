@@ -26,6 +26,18 @@ class JitCodeCache {
                                    backup(thiz, self);
                                });
 
+    // GarbageCollectCache was renamed to DoCollection without a signature change.
+    CREATE_MEM_HOOK_STUB_ENTRY("_ZN3art3jit12JitCodeCache12DoCollectionEPNS_6ThreadE", void,
+                               DoCollection, (JitCodeCache * thiz, Thread *self), {
+                                   auto movements = GetJitMovements();
+                                   LOGD("Before jit cache gc, moving %zu hooked methods",
+                                        movements.size());
+                                   for (auto [target, backup] : movements) {
+                                       MoveObsoleteMethod(thiz, target, backup);
+                                   }
+                                   backup(thiz, self);
+                               });
+
 public:
     static bool Init(const HookHandler &handler) {
         auto sdk_int = GetAndroidApiLevel();
@@ -38,7 +50,7 @@ public:
             }
         }
         if (sdk_int >= __ANDROID_API_N__) [[likely]] {
-            if (!HookSyms(handler, GarbageCollectCache)) [[unlikely]] {
+            if (!HookSyms(handler, GarbageCollectCache, DoCollection)) [[unlikely]] {
                 return false;
             }
         }
